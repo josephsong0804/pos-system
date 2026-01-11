@@ -59,26 +59,24 @@ export const getSalesInsights = async (sales: Sale[], products: Product[]): Prom
 };
 
 /**
- * 优化后的 AI 图片生成
- * 增加了对马来西亚美食风格的深度定制，支持多种构图
+ * 优化后的单一高质量 AI 图片生成
+ * 移除样式选项，采用最优商业摄影提示词，确保出图成功率
  */
-export const generateProductImage = async (productName: string, style: 'Gourmet' | 'Flatlay' | 'Street' = 'Gourmet'): Promise<string | null> => {
+export const generateProductImage = async (productName: string): Promise<string | null> => {
   const ai = getAIClient();
   if (!ai) return null;
 
-  const stylePrompts = {
-    Gourmet: "Professional commercial food photography, studio lighting, bokeh background, macro lens, elegant plating.",
-    Flatlay: "Top-down view food photography, minimalist aesthetic, natural lighting, organized arrangement on a clean table.",
-    Street: "Vibrant Malaysian street food style, steam rising, warm ambient lighting, authentic wooden table or banana leaf background."
-  };
-
-  const fullPrompt = `${stylePrompts[style]} Appetizing close-up shot of ${productName}. High resolution, 4k, delicious textures, colorful, food magazine quality. The food is fresh and beautifully presented.`;
+  // 综合最优提示词：结合了精致构图、自然光影和真实纹理
+  const optimizedPrompt = `Professional commercial food photography of ${productName}. 
+  High-end restaurant quality, appetizing close-up, soft natural lighting, shallow depth of field with a clean background. 
+  Vibrant colors, high resolution, 4k detail, sharp focus on the food textures. 
+  The presentation is clean and modern.`;
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
-        parts: [{ text: fullPrompt }],
+        parts: [{ text: optimizedPrompt }],
       },
       config: {
         imageConfig: {
@@ -87,11 +85,15 @@ export const generateProductImage = async (productName: string, style: 'Gourmet'
       }
     });
 
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
+    // 检查所有候选响应中的 inlineData
+    if (response.candidates && response.candidates[0].content.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
       }
     }
+    
     return null;
   } catch (error) {
     console.error("AI Image Generation Error:", error);

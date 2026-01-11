@@ -32,6 +32,7 @@ const App: React.FC = () => {
       else if (type === 'UPDATE_ORDER') setOrders(prev => prev.map(o => o.id === payload.id ? payload : o));
       else if (type === 'UPDATE_PRODUCTS') setProducts(payload);
       else if (type === 'ADD_MERCHANT') setMerchants(prev => [...prev, payload]);
+      else if (type === 'UPDATE_MERCHANT') setMerchants(prev => prev.map(m => m.id === payload.id ? payload : m));
     };
     
     syncChannel.onmessage = handleSync;
@@ -120,6 +121,10 @@ const App: React.FC = () => {
           onAddMerchant={(m) => {
             setMerchants(prev => [...prev, m]);
             syncChannel?.postMessage({ type: 'ADD_MERCHANT', payload: m });
+          }}
+          onUpdateMerchant={(m) => {
+            setMerchants(prev => prev.map(old => old.id === m.id ? m : old));
+            syncChannel?.postMessage({ type: 'UPDATE_MERCHANT', payload: m });
           }}
         />
       )}

@@ -7,12 +7,14 @@ interface Props {
   orders: Order[];
   onSelectMerchant: (id: string) => void;
   onAddMerchant: (merchant: Merchant) => void;
+  onUpdateMerchant: (merchant: Merchant) => void;
 }
 
-const PlatformAdminView: React.FC<Props> = ({ merchants, onSelectMerchant, onAddMerchant }) => {
+const PlatformAdminView: React.FC<Props> = ({ merchants, onSelectMerchant, onAddMerchant, onUpdateMerchant }) => {
   const [search, setSearch] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newMerchant, setNewMerchant] = useState({ name: '', category: 'F&B', logo: '🏪', websiteUrl: '' });
+  const [showModal, setShowModal] = useState(false);
+  const [editingMerchant, setEditingMerchant] = useState<Merchant | null>(null);
+  const [formData, setFormData] = useState({ name: '', category: 'F&B', logo: '🏪', accessCode: '' });
 
   const generateAccessCode = () => {
     return Math.floor(100000000000 + Math.random() * 900000000000).toString();
@@ -23,19 +25,41 @@ const PlatformAdminView: React.FC<Props> = ({ merchants, onSelectMerchant, onAdd
     m.category.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleAdd = () => {
-    if (!newMerchant.name) return;
-    const m: Merchant = {
-      id: 'm' + (merchants.length + 1),
-      ...newMerchant,
-      sstEnabled: true,
-      serviceCharge: 10,
-      joinedDate: Date.now(),
-      accessCode: generateAccessCode()
-    };
-    onAddMerchant(m);
-    setShowAddModal(false);
-    setNewMerchant({ name: '', category: 'F&B', logo: '🏪', websiteUrl: '' });
+  const handleOpenAdd = () => {
+    setEditingMerchant(null);
+    setFormData({ name: '', category: 'F&B', logo: '🏪', accessCode: generateAccessCode() });
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (m: Merchant) => {
+    setEditingMerchant(m);
+    setFormData({ name: m.name, category: m.category, logo: m.logo, accessCode: m.accessCode });
+    setShowModal(true);
+  };
+
+  const handleSave = () => {
+    if (!formData.name || formData.accessCode.length !== 12) return;
+    
+    if (editingMerchant) {
+      const updated: Merchant = {
+        ...editingMerchant,
+        ...formData
+      };
+      onUpdateMerchant(updated);
+    } else {
+      const m: Merchant = {
+        id: 'm' + (merchants.length + 1),
+        name: formData.name,
+        category: formData.category,
+        logo: formData.logo,
+        accessCode: formData.accessCode,
+        sstEnabled: true,
+        serviceCharge: 10,
+        joinedDate: Date.now(),
+      };
+      onAddMerchant(m);
+    }
+    setShowModal(false);
   };
 
   const formatCode = (code: string) => code.replace(/(\d{4})(?=\d)/g, '$1 ');
@@ -63,7 +87,15 @@ const PlatformAdminView: React.FC<Props> = ({ merchants, onSelectMerchant, onAdd
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredMerchants.map(m => (
-          <div key={m.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all group">
+          <div key={m.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative">
+            <button 
+              onClick={() => handleOpenEdit(m)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+              title="编辑商户信息"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+            </button>
+
             <div className="flex flex-col items-center text-center">
               <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center text-4xl mb-4">{m.logo}</div>
               <h3 className="text-xl font-bold text-slate-800">{m.name}</h3>
@@ -89,7 +121,7 @@ const PlatformAdminView: React.FC<Props> = ({ merchants, onSelectMerchant, onAdd
         ))}
         
         <button 
-          onClick={() => setShowAddModal(true)}
+          onClick={handleOpenAdd}
           className="border-2 border-dashed border-slate-200 rounded-[32px] p-6 flex flex-col items-center justify-center text-slate-400 hover:border-indigo-300 hover:text-indigo-400 transition-all min-h-[300px]"
         >
           <div className="w-12 h-12 rounded-full border-2 border-current flex items-center justify-center mb-3">
@@ -99,17 +131,17 @@ const PlatformAdminView: React.FC<Props> = ({ merchants, onSelectMerchant, onAdd
         </button>
       </div>
 
-      {showAddModal && (
+      {showModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl p-8 animate-in zoom-in duration-200">
-            <h2 className="text-2xl font-black mb-6">录入新商户</h2>
+            <h2 className="text-2xl font-black mb-6">{editingMerchant ? '编辑商户信息' : '录入新商户'}</h2>
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-1">商户名称</label>
                 <input 
                   type="text" 
-                  value={newMerchant.name}
-                  onChange={e => setNewMerchant({...newMerchant, name: e.target.value})}
+                  value={formData.name}
+                  onChange={e => setFormData({...formData, name: e.target.value})}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
                   placeholder="请输入名称"
                 />
@@ -118,28 +150,43 @@ const PlatformAdminView: React.FC<Props> = ({ merchants, onSelectMerchant, onAdd
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-1">分类</label>
                   <select 
-                    value={newMerchant.category}
-                    onChange={e => setNewMerchant({...newMerchant, category: e.target.value})}
+                    value={formData.category}
+                    onChange={e => setFormData({...formData, category: e.target.value})}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"
                   >
                     <option value="F&B">餐饮 (F&B)</option>
                     <option value="Retail">零售 (Retail)</option>
+                    <option value="Beverages">饮品 (Beverages)</option>
                   </select>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-1">图标 (Emoji)</label>
                   <input 
                     type="text" 
-                    value={newMerchant.logo}
-                    onChange={e => setNewMerchant({...newMerchant, logo: e.target.value})}
+                    value={formData.logo}
+                    onChange={e => setFormData({...formData, logo: e.target.value})}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-center text-xl"
                   />
                 </div>
               </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-1">商户识别码 (12位数字)</label>
+                <input 
+                  type="text" 
+                  value={formData.accessCode}
+                  maxLength={12}
+                  onChange={e => setFormData({...formData, accessCode: e.target.value.replace(/\D/g, '')})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-center text-lg font-bold tracking-widest outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="123456789012"
+                />
+                <p className="text-[10px] text-slate-400 mt-1 font-medium">这是商家登录后台的唯一身份识别码</p>
+              </div>
             </div>
             <div className="mt-8 flex gap-3">
-              <button onClick={() => setShowAddModal(false)} className="flex-1 py-3 text-slate-400 font-bold rounded-xl transition">取消</button>
-              <button onClick={handleAdd} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-black shadow-lg shadow-indigo-100">生成商户识别码</button>
+              <button onClick={() => setShowModal(false)} className="flex-1 py-3 text-slate-400 font-bold rounded-xl transition">取消</button>
+              <button onClick={handleSave} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-black shadow-lg shadow-indigo-100">
+                {editingMerchant ? '保存修改' : '生成商户识别码'}
+              </button>
             </div>
           </div>
         </div>
