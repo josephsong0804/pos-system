@@ -33,7 +33,7 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
   const [enteredPin, setEnteredPin] = useState('');
   const [pinError, setPinError] = useState(false);
   
-  // 动态密码逻辑：从 localStorage 读取，如果没有则第一次输入时设定
+  // 动态密码：第一次输入 4 位数即设为密码
   const [storedPin, setStoredPin] = useState<string | null>(() => {
     return localStorage.getItem(`merchant_pin_${merchant.id}`);
   });
@@ -56,6 +56,7 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
     audioRef.current = audio;
   }, []);
 
+  // 核心逻辑：无论订单是本地产生还是同步过来的，只要订单数增加就响铃
   useEffect(() => {
     if (orders.length > prevOrdersCount.current && isAudioUnlocked) {
       audioRef.current?.play().catch(e => console.warn('Audio play failed', e));
@@ -501,7 +502,7 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
                     <input 
                       type="text" 
                       value={editingProduct.name} 
-                      onChange={e => setEditingProduct({...editingProduct, name: e.target.value})} 
+                      onChange={setEditingProduct && (e => setEditingProduct({...editingProduct, name: e.target.value}))} 
                       placeholder="例如：Nasi Lemak Special"
                       className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-indigo-50 outline-none transition-all font-bold" 
                     />

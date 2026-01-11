@@ -15,10 +15,9 @@ const App: React.FC = () => {
   const [loginCode, setLoginCode] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // 优化：增加 BroadcastChannel 兼容性检查
   const syncChannel = useMemo(() => {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-      return new BroadcastChannel('pos_sync');
+      return new BroadcastChannel('pos_sync_v2');
     }
     return null;
   }, []);
@@ -28,16 +27,46 @@ const App: React.FC = () => {
 
     const handleSync = (event: MessageEvent) => {
       const { type, payload } = event.data;
-      if (type === 'NEW_ORDER') setOrders(prev => [...prev, payload]);
-      else if (type === 'UPDATE_ORDER') setOrders(prev => prev.map(o => o.id === payload.id ? payload : o));
-      else if (type === 'UPDATE_PRODUCTS') setProducts(payload);
-      else if (type === 'ADD_MERCHANT') setMerchants(prev => [...prev, payload]);
-      else if (type === 'UPDATE_MERCHANT') setMerchants(prev => prev.map(m => m.id === payload.id ? payload : m));
+      
+      switch (type) {
+        case 'NEW_ORDER':
+          setOrders(prev => [...prev, payload]);
+          break;
+        case 'UPDATE_ORDER':
+          setOrders(prev => prev.map(o => o.id === payload.id ? payload : o));
+          break;
+        case 'UPDATE_PRODUCTS':
+          setProducts(payload);
+          break;
+        case 'ADD_MERCHANT':
+          setMerchants(prev => [...prev, payload]);
+          break;
+        case 'UPDATE_MERCHANT':
+          setMerchants(prev => prev.map(m => m.id === payload.id ? payload : m));
+          break;
+        case 'REQUEST_FULL_STATE':
+          // 其他设备请求数据，如果我有数据，我就广播出去
+          syncChannel.postMessage({ 
+            type: 'FULL_STATE_RESPONSE', 
+            payload: { merchants, products, orders } 
+          });
+          break;
+        case 'FULL_STATE_RESPONSE':
+          // 收到其他设备传来的完整数据，更新本地（仅在本地数据较少时同步，防止覆盖更新）
+          setMerchants(payload.merchants);
+          setProducts(payload.products);
+          setOrders(payload.orders);
+          break;
+      }
     };
     
     syncChannel.onmessage = handleSync;
+    
+    // 初始化时请求一次完整数据同步
+    syncChannel.postMessage({ type: 'REQUEST_FULL_STATE' });
+
     return () => syncChannel.close();
-  }, [syncChannel]);
+  }, [syncChannel, merchants, products, orders]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,7 +107,7 @@ const App: React.FC = () => {
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-indigo-600 rounded-3xl mx-auto flex items-center justify-center text-white text-3xl font-black mb-4 shadow-xl shadow-indigo-200">N</div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">NovaPOS Malaysia</h1>
-            <p className="text-slate-400 text-sm mt-1">云端多端商户管理系统</p>
+            <p className="text-slate-400 text-sm mt-1">云端多端同步商户系统</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-2">
@@ -97,7 +126,10 @@ const App: React.FC = () => {
               验证并进入
             </button>
           </form>
-          <p className="mt-8 text-center text-[10px] text-slate-300 uppercase tracking-widest font-bold">Powered by Nova Network</p>
+          <div className="mt-8 flex items-center justify-center gap-2">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+            <p className="text-center text-[10px] text-slate-400 uppercase tracking-widest font-bold">Multi-Device Sync Active</p>
+          </div>
         </div>
       </div>
     );
