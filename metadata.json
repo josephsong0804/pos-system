@@ -1,0 +1,7 @@
+{
+  "name": "Copy of NovaPOS Malaysia - Multi-Merchant System",
+  "description": "A comprehensive cloud POS platform for Malaysian merchants featuring DuitNow integration, real-time KDS, and multi-store management.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
