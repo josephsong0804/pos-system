@@ -2,9 +2,9 @@
 import { Merchant, Product } from './types';
 
 export const INITIAL_MERCHANTS: Merchant[] = [
-  { id: 'm1', name: 'Jom Makan Cafe', category: 'F&B', logo: '☕', sstEnabled: true, serviceCharge: 10, joinedDate: Date.now() },
-  { id: 'm2', name: 'Restoran Nasi Kandar', category: 'F&B', logo: '🍛', sstEnabled: false, serviceCharge: 0, joinedDate: Date.now() },
-  { id: 'm3', name: 'Bubble Tea Central', category: 'Beverages', logo: '🧋', sstEnabled: true, serviceCharge: 0, joinedDate: Date.now() },
+  { id: 'm1', name: 'Jom Makan Cafe', category: 'F&B', logo: '☕', sstEnabled: true, serviceCharge: 10, joinedDate: Date.now(), accessCode: '100020003000' },
+  { id: 'm2', name: 'Restoran Nasi Kandar', category: 'F&B', logo: '🍛', sstEnabled: false, serviceCharge: 0, joinedDate: Date.now(), accessCode: '200030004000' },
+  { id: 'm3', name: 'Bubble Tea Central', category: 'Beverages', logo: '🧋', sstEnabled: true, serviceCharge: 0, joinedDate: Date.now(), accessCode: '300040005000' },
 ];
 
 export const INITIAL_PRODUCTS: Product[] = [
@@ -17,5 +17,4 @@ export const INITIAL_PRODUCTS: Product[] = [
 
 export const SST_RATE = 0.06;
 
-// Added missing constant CATEGORIES
 export const CATEGORIES = ['All', 'Main', 'Drinks', 'Sides', 'Tea', 'Beverages'];

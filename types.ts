@@ -10,6 +10,7 @@ export interface Merchant {
   serviceCharge: number; // percentage
   joinedDate: number;
   websiteUrl?: string;
+  accessCode: string; // 12-digit unique access code
 }
 
 export interface Product {
