@@ -29,6 +29,7 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [aiStyle, setAiStyle] = useState<'Gourmet' | 'Flatlay' | 'Street'>('Gourmet');
   
   const [settlingOrder, setSettlingOrder] = useState<Order | null>(null);
   const [isAnalyticsUnlocked, setIsAnalyticsUnlocked] = useState(false);
@@ -37,6 +38,7 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
   const ANALYTICS_PIN = '8888';
 
   const [now, setNow] = useState(Date.now());
+  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -47,16 +49,31 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevOrdersCount = useRef(orders.length);
 
+  // 初始化音效
   useEffect(() => {
-    audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    audio.load();
+    audioRef.current = audio;
   }, []);
 
+  // 监听新订单播放铃声
   useEffect(() => {
-    if (orders.length > prevOrdersCount.current) {
-      audioRef.current?.play().catch(() => {});
+    // 只有当订单总数增加且音频已激活时才播放
+    if (orders.length > prevOrdersCount.current && isAudioUnlocked) {
+      audioRef.current?.play().catch(e => console.warn('Audio play failed', e));
     }
     prevOrdersCount.current = orders.length;
-  }, [orders.length]);
+  }, [orders.length, isAudioUnlocked]);
+
+  const unlockAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.play().then(() => {
+        audioRef.current?.pause();
+        audioRef.current!.currentTime = 0;
+        setIsAudioUnlocked(true);
+      }).catch(e => console.error('Audio unlock failed', e));
+    }
+  };
 
   const merchantOrders = orders.filter(o => o.merchantId === merchant.id);
   const pendingOrders = merchantOrders.filter(o => o.status !== 'PAID' && o.status !== 'CANCELLED');
@@ -73,7 +90,7 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
   const handleAIImageGenerate = async () => {
     if (!editingProduct?.name || isGenerating) return;
     setIsGenerating(true);
-    const imgUrl = await generateProductImage(editingProduct.name);
+    const imgUrl = await generateProductImage(editingProduct.name, aiStyle);
     if (imgUrl) setEditingProduct({ ...editingProduct, image: imgUrl });
     setIsGenerating(false);
   };
@@ -155,10 +172,24 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
           </div>
           <div className="hidden sm:block">
             <h1 className="text-xl font-black text-slate-800 tracking-tight">{merchant.name}</h1>
-            <p className="text-[10px] text-indigo-500 font-bold uppercase tracking-widest flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-              多端同步已就绪
-            </p>
+            <div className="flex items-center gap-3 mt-0.5">
+              <p className="text-[10px] text-indigo-500 font-bold uppercase tracking-widest flex items-center gap-1">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                Cloud Sync Ready
+              </p>
+              {!isAudioUnlocked && (
+                <button 
+                  onClick={unlockAudio}
+                  className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter hover:bg-amber-200 transition-colors flex items-center gap-1"
+                >
+                  <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.983 5.983 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.984 3.984 0 00-1.172-2.828 1 1 0 010-1.415z" /></svg>
+                  激活订单铃声
+                </button>
+              )}
+              {isAudioUnlocked && (
+                <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-tighter">🔔 已就绪</span>
+              )}
+            </div>
           </div>
         </div>
         <nav className="flex gap-1 bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar max-w-full">
@@ -429,23 +460,36 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
                </div>
 
                <div className="w-full space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <button 
-                      onClick={handleAIImageGenerate}
-                      disabled={!editingProduct.name || isGenerating}
-                      className="py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-indigo-100 hover:scale-[1.02] transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.663 17h-4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
-                      AI 生成
-                    </button>
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-sm hover:bg-slate-100 transition-all flex items-center justify-center gap-1.5"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                      相册导入
-                    </button>
-                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+                  <div className="flex flex-col gap-3">
+                    <div className="flex gap-2 bg-white p-1 rounded-2xl border border-slate-200">
+                       {(['Gourmet', 'Flatlay', 'Street'] as const).map(s => (
+                         <button 
+                           key={s} 
+                           onClick={() => setAiStyle(s)}
+                           className={`flex-1 py-1.5 text-[8px] font-black uppercase tracking-tighter rounded-xl transition-all ${aiStyle === s ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                         >
+                           {s === 'Gourmet' ? '精致' : s === 'Flatlay' ? '俯拍' : '街头'}
+                         </button>
+                       ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button 
+                        onClick={handleAIImageGenerate}
+                        disabled={!editingProduct.name || isGenerating}
+                        className="py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-indigo-100 hover:scale-[1.02] transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.663 17h-4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                        AI 生成
+                      </button>
+                      <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-sm hover:bg-slate-100 transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                        相册导入
+                      </button>
+                      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+                    </div>
                   </div>
 
                   <div className="space-y-2">

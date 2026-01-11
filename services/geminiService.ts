@@ -2,7 +2,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Product, Sale, AIInsight } from "../types";
 
-// 延迟初始化或增加安全检查，确保 apiKey 存在
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
@@ -18,13 +17,13 @@ export const getSalesInsights = async (sales: Sale[], products: Product[]): Prom
 
   const model = 'gemini-3-flash-preview';
   const prompt = `
-    As a business analyst for NovaPOS, analyze the following sales data and inventory:
+    As a business analyst for NovaPOS Malaysia, analyze the following sales data and inventory:
     Sales Count: ${sales.length}
-    Total Revenue: $${sales.reduce((acc, s) => acc + s.total, 0).toFixed(2)}
+    Total Revenue: RM ${sales.reduce((acc, s) => acc + s.total, 0).toFixed(2)}
     Current Products: ${JSON.stringify(products.map(p => ({ name: p.name, stock: p.stock })))}
     Recent Sales (Last 5): ${JSON.stringify(sales.slice(-5).map(s => ({ total: s.total, items: s.items.length })))}
 
-    Provide a summary of performance, 3 actionable recommendations for inventory or pricing, and a brief trend analysis.
+    Provide a summary of performance, 3 actionable recommendations for inventory or pricing (localized for Malaysia market), and a brief trend analysis.
   `;
 
   try {
@@ -59,18 +58,33 @@ export const getSalesInsights = async (sales: Sale[], products: Product[]): Prom
   }
 };
 
-export const generateProductImage = async (productName: string): Promise<string | null> => {
+/**
+ * 优化后的 AI 图片生成
+ * 增加了对马来西亚美食风格的深度定制，支持多种构图
+ */
+export const generateProductImage = async (productName: string, style: 'Gourmet' | 'Flatlay' | 'Street' = 'Gourmet'): Promise<string | null> => {
   const ai = getAIClient();
   if (!ai) return null;
+
+  const stylePrompts = {
+    Gourmet: "Professional commercial food photography, studio lighting, bokeh background, macro lens, elegant plating.",
+    Flatlay: "Top-down view food photography, minimalist aesthetic, natural lighting, organized arrangement on a clean table.",
+    Street: "Vibrant Malaysian street food style, steam rising, warm ambient lighting, authentic wooden table or banana leaf background."
+  };
+
+  const fullPrompt = `${stylePrompts[style]} Appetizing close-up shot of ${productName}. High resolution, 4k, delicious textures, colorful, food magazine quality. The food is fresh and beautifully presented.`;
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
-        parts: [{ 
-          text: `Professional, commercial high-quality food photography of ${productName}. The lighting is warm and inviting, appetizing, centered, high resolution, soft background.` 
-        }],
+        parts: [{ text: fullPrompt }],
       },
+      config: {
+        imageConfig: {
+          aspectRatio: "1:1"
+        }
+      }
     });
 
     for (const part of response.candidates[0].content.parts) {
