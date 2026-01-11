@@ -2,11 +2,21 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Product, Sale, AIInsight } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// 延迟初始化或增加安全检查，确保 apiKey 存在
+const getAIClient = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    console.warn("API_KEY is missing. AI features will be disabled.");
+    return null;
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 export const getSalesInsights = async (sales: Sale[], products: Product[]): Promise<AIInsight> => {
+  const ai = getAIClient();
+  if (!ai) throw new Error("AI client not initialized");
+
   const model = 'gemini-3-flash-preview';
-  
   const prompt = `
     As a business analyst for NovaPOS, analyze the following sales data and inventory:
     Sales Count: ${sales.length}
@@ -49,10 +59,10 @@ export const getSalesInsights = async (sales: Sale[], products: Product[]): Prom
   }
 };
 
-/**
- * 使用 Gemini 模型根据商品描述生成高品质美食图片
- */
 export const generateProductImage = async (productName: string): Promise<string | null> => {
+  const ai = getAIClient();
+  if (!ai) return null;
+
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',

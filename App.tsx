@@ -15,9 +15,17 @@ const App: React.FC = () => {
   const [loginCode, setLoginCode] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  const syncChannel = useMemo(() => new BroadcastChannel('pos_sync'), []);
+  // 优化：增加 BroadcastChannel 兼容性检查
+  const syncChannel = useMemo(() => {
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      return new BroadcastChannel('pos_sync');
+    }
+    return null;
+  }, []);
 
   useEffect(() => {
+    if (!syncChannel) return;
+
     const handleSync = (event: MessageEvent) => {
       const { type, payload } = event.data;
       if (type === 'NEW_ORDER') setOrders(prev => [...prev, payload]);
@@ -25,6 +33,7 @@ const App: React.FC = () => {
       else if (type === 'UPDATE_PRODUCTS') setProducts(payload);
       else if (type === 'ADD_MERCHANT') setMerchants(prev => [...prev, payload]);
     };
+    
     syncChannel.onmessage = handleSync;
     return () => syncChannel.close();
   }, [syncChannel]);
@@ -95,7 +104,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      {/* 返回按钮移到左上角 */}
       <button 
         onClick={handleBack}
         className="fixed top-4 left-4 z-[100] bg-white/90 backdrop-blur-md border border-slate-200 pl-3 pr-4 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-white shadow-lg flex items-center gap-2 transition-all active:scale-95 group"
@@ -111,7 +119,7 @@ const App: React.FC = () => {
           onSelectMerchant={(id) => setCurrentMerchantId(id)}
           onAddMerchant={(m) => {
             setMerchants(prev => [...prev, m]);
-            syncChannel.postMessage({ type: 'ADD_MERCHANT', payload: m });
+            syncChannel?.postMessage({ type: 'ADD_MERCHANT', payload: m });
           }}
         />
       )}
@@ -123,17 +131,17 @@ const App: React.FC = () => {
           orders={orders.filter(o => o.merchantId === currentMerchantId)}
           onUpdateOrder={(o) => {
             setOrders(prev => prev.map(old => old.id === o.id ? o : old));
-            syncChannel.postMessage({ type: 'UPDATE_ORDER', payload: o });
+            syncChannel?.postMessage({ type: 'UPDATE_ORDER', payload: o });
           }}
           onUpdateProducts={(newP) => {
             const others = products.filter(p => p.merchantId !== currentMerchantId);
             const total = [...others, ...newP];
             setProducts(total);
-            syncChannel.postMessage({ type: 'UPDATE_PRODUCTS', payload: total });
+            syncChannel?.postMessage({ type: 'UPDATE_PRODUCTS', payload: total });
           }}
           onNewOrder={(o) => {
              setOrders(prev => [...prev, o]);
-             syncChannel.postMessage({ type: 'NEW_ORDER', payload: o });
+             syncChannel?.postMessage({ type: 'NEW_ORDER', payload: o });
           }}
         />
       )}
