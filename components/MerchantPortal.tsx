@@ -1,100 +1,80 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Merchant, Product, Order, OrderItem } from '../types';
-import { SST_RATE } from '../constants';
+import { SST_RATE, CATEGORIES as GLOBAL_CATEGORIES } from '../constants';
 
 interface Props {
   merchant: Merchant;
   products: Product[];
   orders: Order[];
+  activeDevicesCount: number;
+  onBack?: () => void;
+  backLabel?: string;
   onUpdateOrder: (order: Order) => void;
   onUpdateProducts: (products: Product[]) => void;
   onNewOrder: (order: Order) => void;
 }
 
-const PRESET_IMAGES = [
-  { name: 'Nasi Lemak', url: 'https://images.unsplash.com/photo-1574484284002-952d92456975?q=80&w=400&h=300&auto=format&fit=crop' },
-  { name: 'Kopi', url: 'https://images.unsplash.com/photo-1541167760496-162955ed8a9f?q=80&w=400&h=300&auto=format&fit=crop' },
-  { name: 'Bubble Tea', url: 'https://images.unsplash.com/photo-1596152062570-36940be64303?q=80&w=400&h=300&auto=format&fit=crop' },
-  { name: 'Cake', url: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?q=80&w=400&h=300&auto=format&fit=crop' },
-  { name: 'Satay', url: 'https://images.unsplash.com/photo-1610450949065-9f2806282054?q=80&w=400&h=300&auto=format&fit=crop' },
-  { name: 'Dim Sum', url: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?q=80&w=400&h=300&auto=format&fit=crop' },
-];
-
-const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateOrder, onUpdateProducts, onNewOrder }) => {
+const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, activeDevicesCount, onBack, backLabel, onUpdateOrder, onUpdateProducts, onNewOrder }) => {
   const [activeTab, setActiveTab] = useState<'PERFORMANCE' | 'ORDERS' | 'POS' | 'MENU'>('POS');
   const [staffCart, setStaffCart] = useState<OrderItem[]>([]);
   const [staffTable, setStaffTable] = useState('01');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [isOrdering, setIsOrdering] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
   
   const [settlingOrder, setSettlingOrder] = useState<Order | null>(null);
   const [isAnalyticsUnlocked, setIsAnalyticsUnlocked] = useState(false);
   const [enteredPin, setEnteredPin] = useState('');
-  const [pinError, setPinError] = useState(false);
   
-  // 动态密码：第一次输入 4 位数即设为密码
-  const [storedPin, setStoredPin] = useState<string | null>(() => {
-    return localStorage.getItem(`merchant_pin_${merchant.id}`);
-  });
+  const [storedPin] = useState<string | null>(() => localStorage.getItem(`merchant_pin_${merchant.id}`));
 
   const [now, setNow] = useState(Date.now());
-  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const prevOrdersCount = useRef(orders.length);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const prevOrdersCount = useRef(orders.length);
-
   useEffect(() => {
     const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
     audio.load();
     audioRef.current = audio;
+    const warmUp = () => {
+      audio.play().then(() => { audio.pause(); audio.currentTime = 0; }).catch(() => {});
+      window.removeEventListener('click', warmUp);
+    };
+    window.addEventListener('click', warmUp);
+    return () => window.removeEventListener('click', warmUp);
   }, []);
 
-  // 核心逻辑：无论订单是本地产生还是同步过来的，只要订单数增加就响铃
   useEffect(() => {
-    if (orders.length > prevOrdersCount.current && isAudioUnlocked) {
-      audioRef.current?.play().catch(e => console.warn('Audio play failed', e));
+    if (orders.length > prevOrdersCount.current) {
+      audioRef.current?.play().catch(() => {});
     }
     prevOrdersCount.current = orders.length;
-  }, [orders.length, isAudioUnlocked]);
+  }, [orders.length]);
 
-  const unlockAudio = () => {
-    if (audioRef.current) {
-      audioRef.current.play().then(() => {
-        audioRef.current?.pause();
-        audioRef.current!.currentTime = 0;
-        setIsAudioUnlocked(true);
-      }).catch(e => console.error('Audio unlock failed', e));
-    }
-  };
+  const categories = useMemo(() => {
+    const uniqueCats = Array.from(new Set(products.map(p => p.category)));
+    return ['All', ...uniqueCats];
+  }, [products]);
 
-  const merchantOrders = orders.filter(o => o.merchantId === merchant.id);
-  const pendingOrders = merchantOrders.filter(o => o.status !== 'PAID' && o.status !== 'CANCELLED');
-  const completedOrders = merchantOrders.filter(o => o.status === 'PAID');
+  const filteredProducts = useMemo(() => {
+    if (selectedCategory === 'All') return products;
+    return products.filter(p => p.category === selectedCategory);
+  }, [products, selectedCategory]);
+
+  const pendingOrders = orders.filter(o => o.merchantId === merchant.id && o.status !== 'PAID' && o.status !== 'CANCELLED');
+  const completedOrders = orders.filter(o => o.merchantId === merchant.id && o.status === 'PAID');
   const totalRevenue = completedOrders.reduce((acc, o) => acc + o.total, 0);
 
   const formatDuration = (timestamp: number) => {
     const diff = Math.floor((now - timestamp) / 1000);
-    const mins = Math.floor(diff / 60);
-    const secs = diff % 60;
-    return `${mins}m ${secs}s`;
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditingProduct(prev => prev ? { ...prev, image: reader.result as string } : null);
-      };
-      reader.readAsDataURL(file);
-    }
+    return `${Math.floor(diff / 60)}m ${diff % 60}s`;
   };
 
   const addToStaffCart = (p: Product) => {
@@ -105,36 +85,40 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
     });
   };
 
-  const handleStaffPlaceOrder = () => {
-    if (staffCart.length === 0) return;
-    const subtotal = staffCart.reduce((acc, i) => acc + (i.price * i.quantity), 0);
-    const sst = merchant.sstEnabled ? subtotal * SST_RATE : 0;
-    const service = subtotal * (merchant.serviceCharge / 100);
-    const total = subtotal + sst + service;
+  const handleStaffPlaceOrder = async () => {
+    if (staffCart.length === 0 || isOrdering) return;
+    setIsOrdering(true);
+    
+    try {
+      const subtotal = staffCart.reduce((acc, i) => acc + (i.price * i.quantity), 0);
+      const sst = merchant.sstEnabled ? subtotal * SST_RATE : 0;
+      const service = subtotal * (merchant.serviceCharge / 100);
+      const total = subtotal + sst + service;
 
-    const newOrder: Order = {
-      id: 'S-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
-      merchantId: merchant.id,
-      items: staffCart.map(item => ({ ...item, isServed: false })),
-      subtotal,
-      sst,
-      serviceChargeAmount: service,
-      total,
-      status: 'PENDING',
-      timestamp: Date.now(),
-      tableNumber: staffTable,
-      staffName: 'Waiter'
-    };
-    onNewOrder(newOrder);
-    setStaffCart([]);
-    setStaffTable((parseInt(staffTable) + 1).toString().padStart(2, '0'));
-    setActiveTab('ORDERS');
-  };
-
-  const toggleItemServed = (order: Order, itemIndex: number) => {
-    const newItems = [...order.items];
-    newItems[itemIndex] = { ...newItems[itemIndex], isServed: !newItems[itemIndex].isServed };
-    onUpdateOrder({ ...order, items: newItems });
+      const newOrder: Order = {
+        id: 'O-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+        merchantId: merchant.id,
+        items: [...staffCart],
+        subtotal, sst, serviceChargeAmount: service, total,
+        status: 'PENDING',
+        timestamp: Date.now(),
+        tableNumber: staffTable,
+        staffName: 'Cashier Terminal'
+      };
+      
+      onNewOrder(newOrder);
+      setStaffCart([]);
+      setStaffTable(prev => (parseInt(prev) + 1).toString().padStart(2, '0'));
+      
+      // 核心跳转：下单后自动跳转到厨房列表，确保员工能够确认订单已同步
+      setTimeout(() => {
+        setActiveTab('ORDERS');
+        setIsOrdering(false);
+      }, 400);
+    } catch (e) {
+      console.error(e);
+      setIsOrdering(false);
+    }
   };
 
   const handleFinalSettlement = (method: 'CASH' | 'Card') => {
@@ -143,77 +127,51 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
     setSettlingOrder(null);
   };
 
-  const handlePinSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (enteredPin.length !== 4) return;
-
-    if (!storedPin) {
-      // 第一次进入，设置密码
-      localStorage.setItem(`merchant_pin_${merchant.id}`, enteredPin);
-      setStoredPin(enteredPin);
-      setIsAnalyticsUnlocked(true);
-      setPinError(false);
-      setEnteredPin('');
-    } else {
-      // 验证密码
-      if (enteredPin === storedPin) {
-        setIsAnalyticsUnlocked(true);
-        setPinError(false);
-        setEnteredPin('');
-      } else {
-        setPinError(true);
-        setEnteredPin('');
-      }
-    }
-  };
-
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
-      <header className="bg-white border-b border-slate-100 px-6 py-3 flex flex-col md:flex-row items-center justify-between gap-4 sticky top-0 z-40">
-        <div className="flex items-center gap-4 ml-24 md:ml-32">
-          <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-3xl shadow-sm border border-slate-100">
-            {merchant.logo}
-          </div>
-          <div className="hidden sm:block">
-            <h1 className="text-xl font-black text-slate-800 tracking-tight">{merchant.name}</h1>
-            <div className="flex items-center gap-3 mt-0.5">
-              <p className="text-[10px] text-indigo-500 font-bold uppercase tracking-widest flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                Cloud Sync Ready
-              </p>
-              {!isAudioUnlocked && (
-                <button 
-                  onClick={unlockAudio}
-                  className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter hover:bg-amber-200 transition-colors flex items-center gap-1"
-                >
-                  <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.983 5.983 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.984 3.984 0 00-1.172-2.828 1 1 0 010-1.415z" /></svg>
-                  激活订单铃声
-                </button>
-              )}
-              {isAudioUnlocked && (
-                <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-tighter">🔔 已就绪</span>
-              )}
+    <div className="h-screen w-full flex flex-col bg-slate-50 font-sans overflow-hidden">
+      {/* 顶部导航栏 */}
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0 z-50 shadow-sm">
+        <div className="flex items-center gap-6">
+          {onBack && (
+            <button 
+              onClick={onBack}
+              className="group flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all active:scale-95"
+            >
+              <svg className="w-5 h-5 text-indigo-600 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span className="text-xs font-black text-slate-600 uppercase tracking-widest hidden sm:inline">{backLabel || '退出'}</span>
+            </button>
+          )}
+
+          <div className="flex items-center gap-4 border-l border-slate-200 pl-6">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-xl text-white font-black shadow-lg shadow-indigo-100">
+              {merchant.logo}
+            </div>
+            <div>
+              <h1 className="text-lg font-black text-slate-800 leading-none">{merchant.name}</h1>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">{activeDevicesCount} 设备在线同步</p>
+              </div>
             </div>
           </div>
         </div>
-        <nav className="flex gap-1 bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar max-w-full">
+        
+        <nav className="flex gap-1.5 bg-slate-100 p-1.5 rounded-2xl">
           {[
             { id: 'POS', label: '柜台点单' },
-            { id: 'ORDERS', label: `桌位/订单 (${pendingOrders.length})` },
+            { id: 'ORDERS', label: `厨房列表 (${pendingOrders.length})` },
             { id: 'PERFORMANCE', label: '营收统计' },
-            { id: 'MENU', label: '菜单设置' }
+            { id: 'MENU', label: '菜单管理' }
           ].map(tab => (
             <button 
               key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id as any);
-                if (tab.id !== 'PERFORMANCE') {
-                  setIsAnalyticsUnlocked(false);
-                  setEnteredPin('');
-                  setPinError(false);
-                }
-              }}
-              className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all ${activeTab === tab.id ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
             >
               {tab.label}
             </button>
@@ -221,331 +179,247 @@ const MerchantPortal: React.FC<Props> = ({ merchant, products, orders, onUpdateO
         </nav>
       </header>
 
-      <main className="flex-1 p-4 md:p-8">
+      {/* 内容区域：修复页面显示一半的问题 */}
+      <main className="flex-1 overflow-hidden p-6 relative flex flex-col">
         {activeTab === 'POS' && (
-          <div className="h-[calc(100vh-140px)] flex flex-col lg:flex-row gap-6 animate-in slide-in-from-right duration-300">
-            <div className="flex-1 bg-white rounded-[32px] border border-slate-100 p-6 flex flex-col shadow-sm">
-               <div className="flex justify-between items-center mb-6">
-                 <h2 className="text-lg font-black text-slate-800">服务员下单</h2>
-                 <div className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">设置桌号:</span>
+          <div className="flex-1 flex flex-col lg:flex-row gap-6 animate-in slide-in-from-bottom duration-500 overflow-hidden">
+            {/* 左侧：选餐面板 (Typo Fixed) */}
+            <div className="flex-[7] bg-white rounded-[40px] border border-slate-100 p-8 flex flex-col shadow-sm overflow-hidden">
+               <div className="flex justify-between items-center mb-6 flex-shrink-0">
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">选餐面板</h2>
+                  <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-100">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2">桌号/台号:</span>
                     <input 
                       type="text" 
                       value={staffTable} 
                       onChange={e => setStaffTable(e.target.value)}
-                      className="w-20 text-center border-b-2 border-indigo-500 font-black text-indigo-600 focus:outline-none text-xl"
+                      className="w-16 text-center bg-white border border-slate-200 rounded-lg font-black text-indigo-600 text-lg focus:outline-none focus:ring-2 focus:ring-indigo-100"
                     />
-                 </div>
+                  </div>
                </div>
-               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pr-2 no-scrollbar">
-                 {products.map(p => (
-                   <button 
+
+               <div className="flex gap-2 mb-6 overflow-x-auto no-scrollbar flex-shrink-0">
+                 {categories.map(cat => (
+                   <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedCategory === cat ? 'bg-slate-900 text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                   >
+                     {cat}
+                   </button>
+                 ))}
+               </div>
+
+               <div className="flex-1 overflow-y-auto pr-2 no-scrollbar grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 content-start">
+                 {filteredProducts.map(p => (
+                   <div 
                      key={p.id}
                      onClick={() => addToStaffCart(p)}
-                     className="bg-slate-50 p-3 rounded-[24px] border border-transparent hover:border-indigo-200 transition-all text-left flex flex-col group"
+                     className="bg-white p-4 rounded-[32px] border border-slate-100 hover:border-indigo-200 hover:shadow-xl transition-all cursor-pointer group active:scale-95 select-none"
                    >
-                     <img src={p.image} className="w-full aspect-square object-cover rounded-[18px] mb-3 shadow-sm group-hover:scale-105 transition-transform" />
-                     <p className="font-bold text-slate-800 text-sm line-clamp-1">{p.name}</p>
-                     <p className="text-indigo-600 font-black mt-1">RM {p.price.toFixed(2)}</p>
-                   </button>
+                     <div className="relative mb-3 aspect-square overflow-hidden rounded-[24px] bg-slate-50">
+                        <img src={p.image} className="h-full w-full object-cover group-hover:scale-110 transition-transform duration-500" alt={p.name} />
+                        <div className="absolute inset-0 bg-indigo-600/0 group-hover:bg-indigo-600/10 transition-colors" />
+                     </div>
+                     <h4 className="font-bold text-slate-800 text-sm line-clamp-1 mb-1">{p.name}</h4>
+                     <p className="text-indigo-600 font-black text-base font-mono">RM {p.price.toFixed(2)}</p>
+                   </div>
                  ))}
                </div>
             </div>
 
-            <div className="w-full lg:w-96 bg-white rounded-[32px] border border-slate-100 p-6 flex flex-col shadow-lg">
-              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 pb-4 border-b">点餐篮 (桌号: {staffTable})</h3>
-              <div className="flex-1 overflow-y-auto space-y-4 mb-6 pr-2 no-scrollbar">
+            {/* 右侧：下单预览区 */}
+            <div className="w-full lg:w-[420px] bg-white rounded-[40px] border border-slate-100 p-8 flex flex-col shadow-2xl relative overflow-hidden flex-shrink-0">
+              <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-50 rounded-full -mr-24 -mt-24 blur-3xl opacity-50" />
+              <div className="flex items-center justify-between mb-8 relative z-10">
+                <h3 className="text-lg font-black text-slate-900">下单清单</h3>
+                <span className="bg-slate-900 text-white px-3 py-1 rounded-full text-[10px] font-black">
+                  {staffCart.reduce((a, b) => a + b.quantity, 0)} 项
+                </span>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto space-y-4 mb-8 pr-2 no-scrollbar relative z-10">
                 {staffCart.map((item, i) => (
-                  <div key={i} className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm font-bold text-slate-800">{item.name}</p>
-                      <p className="text-[10px] text-slate-400">RM {item.price.toFixed(2)}</p>
+                  <div key={item.id + i} className="flex justify-between items-center bg-slate-50/80 p-4 rounded-2xl border border-slate-100 animate-in slide-in-from-right duration-200">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-800 truncate leading-tight">{item.name}</p>
+                      <p className="text-[10px] text-indigo-600 font-black mt-1">RM {item.price.toFixed(2)}</p>
                     </div>
-                    <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
-                       <button onClick={() => setStaffCart(prev => prev.map(p => p.id === item.id ? {...p, quantity: Math.max(0, p.quantity-1)} : p).filter(p => p.quantity > 0))} className="w-6 h-6 flex items-center justify-center font-black">-</button>
-                       <span className="w-6 text-center text-xs font-black">{item.quantity}</span>
-                       <button onClick={() => addToStaffCart(item)} className="w-6 h-6 flex items-center justify-center font-black">+</button>
+                    <div className="flex items-center gap-2 ml-4">
+                       <button onClick={() => setStaffCart(prev => prev.map(p => p.id === item.id ? {...p, quantity: Math.max(0, p.quantity-1)} : p).filter(p => p.quantity > 0))} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm font-black text-slate-400 hover:text-indigo-600 transition-colors">-</button>
+                       <span className="text-xs font-black text-slate-700 w-4 text-center">{item.quantity}</span>
+                       <button onClick={() => addToStaffCart(item)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm font-black text-slate-400 hover:text-indigo-600 transition-colors">+</button>
                     </div>
                   </div>
                 ))}
-                {staffCart.length === 0 && <p className="text-center py-20 text-slate-300 font-bold text-xs">空空如也</p>}
-              </div>
-              <button 
-                onClick={handleStaffPlaceOrder} 
-                disabled={staffCart.length === 0}
-                className="w-full py-5 bg-indigo-600 text-white rounded-[24px] font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-100 hover:bg-slate-900 transition-all active:scale-95 disabled:opacity-20"
-              >
-                送入厨房 / Send to Kitchen
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'ORDERS' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in zoom-in duration-300">
-            {pendingOrders.map(order => (
-              <div key={order.id} className="bg-white rounded-[32px] border-2 border-slate-100 shadow-sm overflow-hidden flex flex-col hover:border-indigo-100 transition-all">
-                <div className="p-5 bg-indigo-600 flex justify-between items-center text-white">
-                    <div className="flex items-center gap-3">
-                       <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-lg font-black">{order.tableNumber}</div>
-                       <div>
-                         <span className="font-black text-sm uppercase tracking-widest block leading-none">Table {order.tableNumber}</span>
-                         <span className="text-[10px] font-bold opacity-60">下单已：{formatDuration(order.timestamp)}</span>
-                       </div>
-                    </div>
-                    <span className="text-[10px] font-bold opacity-60">#{order.id.slice(0, 6)}</span>
-                </div>
-                <div className="p-5 flex-1 space-y-2">
-                  <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1">点击菜品划掉(上菜)</p>
-                  {order.items.map((item, i) => (
-                    <button 
-                      key={i} 
-                      onClick={() => toggleItemServed(order, i)}
-                      className={`w-full flex justify-between items-center text-sm font-bold p-2 rounded-xl transition-all ${
-                        item.isServed ? 'opacity-30 bg-slate-50' : 'text-slate-700 bg-white hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className={item.isServed ? 'line-through' : ''}>
-                        <span className="text-indigo-600 mr-2">{item.quantity}x</span>
-                        {item.name}
-                      </span>
-                      {item.isServed && <svg className="w-4 h-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                    </button>
-                  ))}
-                  <div className="pt-4 border-t border-slate-50 mt-2 flex justify-between items-end">
-                    <p className="text-[10px] font-black text-slate-400 uppercase">当前挂账金额</p>
-                    <p className="text-lg font-black text-indigo-600 font-mono">RM {order.total.toFixed(2)}</p>
+                {staffCart.length === 0 && (
+                  <div className="h-full flex flex-col items-center justify-center text-center opacity-30 py-20">
+                    <svg className="w-12 h-12 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
+                    <p className="font-black text-[10px] uppercase tracking-[0.2em]">请点餐</p>
                   </div>
+                )}
+              </div>
+
+              <div className="pt-6 border-t border-slate-100 space-y-5 relative z-10 flex-shrink-0">
+                <div className="flex justify-between items-end">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">应收金额</span>
+                  <span className="text-3xl font-black text-indigo-600 font-mono">RM {staffCart.reduce((a, b) => a + (b.price * b.quantity), 0).toFixed(2)}</span>
                 </div>
-                <div className="p-4 grid grid-cols-1 gap-2 bg-slate-50">
-                   <button 
-                    onClick={() => setSettlingOrder(order)}
-                    className="py-3.5 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-indigo-600 transition-colors shadow-lg"
-                   >
-                     立即结账 / CHECKOUT
-                   </button>
-                </div>
-              </div>
-            ))}
-            {pendingOrders.length === 0 && (
-              <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 rounded-[40px]">
-                <p className="text-slate-300 font-black text-sm">当前没有正在用餐的桌位</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'PERFORMANCE' && (
-           <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
-             {!isAnalyticsUnlocked ? (
-               <div className="max-w-md mx-auto bg-white p-10 rounded-[40px] shadow-2xl border border-slate-100 text-center">
-                 <div className="w-16 h-16 bg-slate-900 text-white rounded-2xl flex items-center justify-center mx-auto mb-6">
-                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                 </div>
-                 <h2 className="text-2xl font-black text-slate-900 mb-2">{storedPin ? '营收统计锁定' : '设置管理密码'}</h2>
-                 <p className="text-slate-400 text-sm mb-8 font-medium">
-                   {storedPin ? '请输入 4 位管理密码以查看敏感财务数据' : '请设置 4 位管理密码（第一次输入即为密码）'}
-                 </p>
-                 <form onSubmit={handlePinSubmit} className="space-y-6">
-                   <input 
-                    type="password" 
-                    maxLength={4} 
-                    autoFocus
-                    value={enteredPin}
-                    onChange={e => setEnteredPin(e.target.value.replace(/\D/g, ''))}
-                    className={`w-full bg-slate-50 border-2 ${pinError ? 'border-red-500' : 'border-slate-100'} rounded-2xl px-6 py-4 text-center text-3xl font-bold tracking-[1em] focus:outline-none transition-all`}
-                    placeholder="****"
-                   />
-                   {pinError && <p className="text-red-500 text-[10px] font-black uppercase">密码错误，请重试</p>}
-                   <button type="submit" className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-slate-200 hover:bg-indigo-600 transition-all">
-                      {storedPin ? '验证密码' : '设置并进入'}
-                   </button>
-                 </form>
-               </div>
-             ) : (
-               <div className="animate-in zoom-in duration-300">
-                 <div className="flex justify-between items-center mb-8">
-                    <h2 className="text-2xl font-black text-slate-800">今日经营报告</h2>
-                    <button onClick={() => setIsAnalyticsUnlocked(false)} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-red-500 transition-colors">退出数据视野</button>
-                 </div>
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
-                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">今日实收额 (已结账)</p>
-                       <p className="text-4xl font-black text-indigo-600">RM {totalRevenue.toFixed(2)}</p>
-                    </div>
-                    <div className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
-                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">已结单数</p>
-                       <p className="text-4xl font-black text-slate-800">{completedOrders.length}</p>
-                    </div>
-                    <div className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm text-center">
-                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">未结桌位</p>
-                       <p className="text-4xl font-black text-amber-500">{pendingOrders.length}</p>
-                    </div>
-                 </div>
-               </div>
-             )}
-          </div>
-        )}
-
-        {activeTab === 'MENU' && (
-           <div className="max-w-5xl mx-auto bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
-             <div className="p-8 border-b border-slate-100 flex justify-between items-center">
-                <h2 className="text-xl font-black text-slate-800">菜单商品库</h2>
-                <button onClick={() => { setEditingProduct({ name: '', price: 0, category: 'Main', image: '' }); setShowProductModal(true); }} className="px-6 py-3 bg-indigo-600 text-white rounded-2xl text-xs font-black">+ 添加商品</button>
-             </div>
-             <div className="overflow-x-auto">
-               <table className="w-full text-left">
-                  <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    <tr><th className="px-8 py-5">图片</th><th className="px-8 py-5">名称</th><th className="px-8 py-5">单价</th><th className="px-8 py-5 text-right">操作</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {products.map(p => (
-                      <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-8 py-4"><img src={p.image} className="w-10 h-10 rounded-xl object-cover shadow-sm" /></td>
-                        <td className="px-8 py-4 font-bold">{p.name}</td>
-                        <td className="px-8 py-4 font-mono font-bold text-indigo-600">RM {p.price.toFixed(2)}</td>
-                        <td className="px-8 py-4 text-right">
-                           <button onClick={() => { setEditingProduct(p); setShowProductModal(true); }} className="px-4 py-2 bg-slate-100 rounded-lg text-[10px] font-bold">编辑</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-               </table>
-             </div>
-           </div>
-        )}
-      </main>
-
-      {settlingOrder && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-           <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden p-8 animate-in zoom-in duration-200">
-              <div className="text-center mb-8">
-                 <div className="w-20 h-20 bg-indigo-600 text-white rounded-3xl flex items-center justify-center mx-auto text-3xl font-black mb-4">{settlingOrder.tableNumber}</div>
-                 <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Table {settlingOrder.tableNumber} 结算</h2>
-                 <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">请核对账单并选择支付方式</p>
-              </div>
-
-              <div className="space-y-3 bg-slate-50 p-6 rounded-[28px] border mb-8 font-bold text-sm text-slate-600">
-                 {settlingOrder.items.map((item, i) => (
-                    <div key={i} className="flex justify-between">
-                       <span className={item.isServed ? 'line-through opacity-50' : ''}>{item.quantity}x {item.name}</span>
-                       <span className="font-mono">RM {(item.price * item.quantity).toFixed(2)}</span>
-                    </div>
-                 ))}
-                 <div className="pt-3 border-t border-slate-200 flex justify-between text-2xl font-black text-slate-900">
-                    <span>TOTAL</span>
-                    <span className="text-indigo-600">RM {settlingOrder.total.toFixed(2)}</span>
-                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                 <button onClick={() => handleFinalSettlement('CASH')} className="py-4 bg-slate-100 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition">现金结算</button>
-                 <button onClick={() => handleFinalSettlement('Card')} className="py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-100 hover:bg-slate-900 transition">刷卡 / 扫码</button>
-              </div>
-              <button onClick={() => setSettlingOrder(null)} className="w-full mt-4 py-2 text-slate-400 font-bold text-xs uppercase">取消</button>
-           </div>
-        </div>
-      )}
-
-      {showProductModal && editingProduct && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-4xl rounded-[40px] shadow-2xl overflow-hidden flex flex-col md:flex-row animate-in zoom-in duration-200">
-            {/* Left: Image Management */}
-            <div className="w-full md:w-1/2 bg-slate-50 p-8 flex flex-col items-center">
-               <div className="w-full aspect-square rounded-[32px] bg-white border border-slate-200 overflow-hidden shadow-inner mb-6 flex items-center justify-center relative">
-                  {editingProduct.image ? (
-                    <img src={editingProduct.image} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="text-slate-300 font-bold">无预览图片</div>
-                  )}
-               </div>
-
-               <div className="w-full space-y-3">
-                  <div className="grid grid-cols-1 gap-3">
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="py-4 bg-white border border-slate-200 text-slate-900 rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm hover:bg-slate-100 transition-all flex items-center justify-center gap-1.5"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                      从相册导入商品照片
-                    </button>
-                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
-                  </div>
-
-                  <div className="space-y-2">
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">快速选择预设素材</p>
-                     <div className="grid grid-cols-3 gap-2">
-                        {PRESET_IMAGES.map(img => (
-                          <button 
-                            key={img.url}
-                            onClick={() => setEditingProduct({...editingProduct, image: img.url})}
-                            className={`aspect-square rounded-xl border-2 overflow-hidden transition-all ${editingProduct.image === img.url ? 'border-indigo-600 scale-95 shadow-lg' : 'border-transparent grayscale hover:grayscale-0'}`}
-                          >
-                             <img src={img.url} className="w-full h-full object-cover" title={img.name} />
-                          </button>
-                        ))}
-                     </div>
-                  </div>
-               </div>
-            </div>
-
-            {/* Right: Details Form */}
-            <div className="w-full md:w-1/2 p-10 bg-white space-y-6 flex flex-col justify-center">
-              <div>
-                <h2 className="text-3xl font-black text-slate-800 tracking-tighter mb-2">{editingProduct.id ? '编辑商品' : '录入新品'}</h2>
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">填写商品详细信息</p>
-              </div>
-              
-              <div className="space-y-5">
-                 <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">商品名称</label>
-                    <input 
-                      type="text" 
-                      value={editingProduct.name} 
-                      onChange={setEditingProduct && (e => setEditingProduct({...editingProduct, name: e.target.value}))} 
-                      placeholder="例如：Nasi Lemak Special"
-                      className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-indigo-50 outline-none transition-all font-bold" 
-                    />
-                 </div>
-                 <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">售价 (RM)</label>
-                    <input 
-                      type="number" 
-                      value={editingProduct.price} 
-                      onChange={e => setEditingProduct({...editingProduct, price: parseFloat(e.target.value)})} 
-                      className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-indigo-50 outline-none transition-all font-mono font-bold" 
-                    />
-                 </div>
-                 <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">自定义图片链接 (URL)</label>
-                    <input 
-                      type="text" 
-                      value={editingProduct.image} 
-                      onChange={e => setEditingProduct({...editingProduct, image: e.target.value})} 
-                      className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-indigo-50 outline-none transition-all text-xs text-slate-500 font-mono" 
-                      placeholder="https://..."
-                    />
-                 </div>
-              </div>
-
-              <div className="pt-6 flex gap-3">
-                <button onClick={() => setShowProductModal(false)} className="flex-1 py-4 text-slate-400 font-black text-xs uppercase tracking-widest hover:bg-slate-50 rounded-2xl transition">取消</button>
                 <button 
-                  onClick={() => {
-                    if (!editingProduct.name || editingProduct.price === undefined) return;
-                    const updated = editingProduct.id 
-                      ? products.map(p => p.id === editingProduct.id ? {...p, ...editingProduct} as Product : p)
-                      : [...products, { ...editingProduct, id: 'p-' + Date.now(), merchantId: merchant.id, isAvailable: true, stock: 999 } as Product];
-                    onUpdateProducts(updated);
-                    setShowProductModal(false);
-                  }} 
-                  className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-slate-200 hover:bg-indigo-600 transition-all"
+                  onClick={handleStaffPlaceOrder} 
+                  disabled={staffCart.length === 0 || isOrdering}
+                  className="w-full py-6 bg-indigo-600 text-white rounded-[28px] font-black text-xs uppercase tracking-widest shadow-2xl shadow-indigo-100 hover:bg-slate-900 transition-all active:scale-95 disabled:opacity-20 flex items-center justify-center gap-2"
                 >
-                  确认保存商品
+                  {isOrdering ? '正在同步厨房...' : '确认发送至厨房 (KDS)'}
                 </button>
               </div>
             </div>
           </div>
+        )}
+        
+        {activeTab === 'ORDERS' && (
+          <div className="flex-1 overflow-y-auto no-scrollbar animate-in fade-in duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-10">
+              {pendingOrders.map(order => (
+                <div key={order.id} className="bg-white rounded-[40px] border-2 border-slate-100 p-8 flex flex-col hover:border-indigo-100 transition-all shadow-sm">
+                  <div className="flex justify-between items-center mb-6">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center text-lg font-black">{order.tableNumber}</div>
+                        <span className="font-black text-slate-800 text-sm">桌号 {order.tableNumber}</span>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400">{formatDuration(order.timestamp)}</span>
+                  </div>
+                  <div className="flex-1 space-y-2.5">
+                    {order.items.map((item, i) => (
+                      <div 
+                        key={i} 
+                        onClick={() => {
+                          const newItems = [...order.items];
+                          newItems[i] = { ...newItems[i], isServed: !newItems[i].isServed };
+                          onUpdateOrder({ ...order, items: newItems });
+                        }}
+                        className={`flex justify-between items-center p-3.5 rounded-xl border cursor-pointer transition-all ${item.isServed ? 'opacity-30 bg-slate-50 border-transparent' : 'bg-white border-slate-100 hover:bg-slate-50'}`}
+                      >
+                        <span className={`text-xs font-bold ${item.isServed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                          <span className="text-indigo-600 mr-2 font-black">x{item.quantity}</span> {item.name}
+                        </span>
+                        {item.isServed && <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-8 pt-6 border-t border-slate-100 flex justify-between items-end mb-6">
+                    <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">待支付</span>
+                    <span className="text-2xl font-black text-indigo-600 font-mono">RM {order.total.toFixed(2)}</span>
+                  </div>
+                  <button 
+                    onClick={() => setSettlingOrder(order)}
+                    className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition-all shadow-xl shadow-slate-100"
+                  >
+                    办理结算 / CHECKOUT
+                  </button>
+                </div>
+              ))}
+              {pendingOrders.length === 0 && (
+                <div className="col-span-full py-24 text-center border-4 border-dashed border-slate-200 rounded-[50px] flex flex-col items-center justify-center opacity-20">
+                  <svg className="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <p className="text-xl font-black uppercase tracking-widest">厨房暂无新订单</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 性能报表 */}
+        {activeTab === 'PERFORMANCE' && (
+           <div className="flex-1 overflow-y-auto no-scrollbar py-10">
+             {!isAnalyticsUnlocked ? (
+                <div className="max-w-md mx-auto bg-white p-12 rounded-[50px] shadow-2xl text-center border border-slate-100">
+                  <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight">财务管理锁</h2>
+                  <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-8">输入 4 位 PIN 码解锁</p>
+                  <input 
+                   type="password" 
+                   maxLength={4} 
+                   value={enteredPin}
+                   onChange={e => setEnteredPin(e.target.value.replace(/\D/g, ''))}
+                   className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-5 text-center text-3xl font-black tracking-[1em] focus:ring-4 focus:ring-indigo-50 outline-none mb-8 font-mono"
+                   placeholder="****"
+                  />
+                  <button onClick={() => {
+                    if (enteredPin === (storedPin || '0000')) setIsAnalyticsUnlocked(true);
+                    else { alert('密码错误'); setEnteredPin(''); }
+                  }} className="w-full py-5 bg-slate-900 text-white rounded-[24px] font-black text-xs uppercase tracking-widest hover:bg-indigo-600 transition-all shadow-xl">解锁报表中心</button>
+                </div>
+             ) : (
+                <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 animate-in zoom-in duration-300">
+                  <div className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">今日总营收</p>
+                    <p className="text-4xl font-black text-indigo-600 font-mono">RM {totalRevenue.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">已结账单</p>
+                    <p className="text-4xl font-black text-slate-800 font-mono">{completedOrders.length}</p>
+                  </div>
+                  <div className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">客单价 (AOV)</p>
+                    <p className="text-4xl font-black text-emerald-600 font-mono">RM {completedOrders.length > 0 ? (totalRevenue / completedOrders.length).toFixed(2) : '0.00'}</p>
+                  </div>
+                </div>
+             )}
+           </div>
+        )}
+
+        {activeTab === 'MENU' && (
+           <div className="flex-1 bg-white rounded-[40px] border border-slate-100 overflow-hidden flex flex-col shadow-sm">
+              <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/30">
+                 <h2 className="text-xl font-black text-slate-900 tracking-tight">商品库存管理</h2>
+                 <button onClick={() => { setEditingProduct({ name: '', price: 0, category: 'Main', image: '' }); setShowProductModal(true); }} className="px-6 py-3 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-100 hover:bg-slate-900 transition-all">+ 录入新品</button>
+              </div>
+              <div className="flex-1 overflow-y-auto no-scrollbar">
+                <table className="w-full text-left">
+                   <thead className="bg-white sticky top-0 z-10 border-b border-slate-100">
+                     <tr>
+                        <th className="px-10 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">预览</th>
+                        <th className="px-10 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">商品名称</th>
+                        <th className="px-10 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">分类</th>
+                        <th className="px-10 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">定价</th>
+                        <th className="px-10 py-5 text-right">操作</th>
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-slate-50">
+                     {products.map(p => (
+                       <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                         <td className="px-10 py-5"><img src={p.image} className="w-14 h-14 rounded-2xl object-cover shadow-sm border border-slate-100" /></td>
+                         <td className="px-10 py-5 font-bold text-slate-800 text-sm">{p.name}</td>
+                         <td className="px-10 py-5"><span className="text-[10px] font-black text-indigo-500 uppercase bg-indigo-50 px-3 py-1 rounded-lg">{p.category}</span></td>
+                         <td className="px-10 py-5 font-mono font-black text-lg">RM {p.price.toFixed(2)}</td>
+                         <td className="px-10 py-5 text-right">
+                            <button onClick={() => { setEditingProduct(p); setShowProductModal(true); }} className="px-4 py-2 border border-slate-200 rounded-xl text-[10px] font-black text-slate-400 hover:text-indigo-600 hover:border-indigo-100 transition-all">编辑</button>
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                </table>
+              </div>
+           </div>
+        )}
+      </main>
+
+      {/* 结算弹窗 */}
+      {settlingOrder && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+           <div className="bg-white w-full max-w-md rounded-[50px] shadow-2xl p-12 text-center animate-in zoom-in duration-200 relative">
+              <div className="absolute top-0 left-0 w-full h-2 bg-indigo-600" />
+              <h2 className="text-2xl font-black text-slate-900 mb-8 tracking-tight">办理收款结账</h2>
+              <div className="bg-slate-50 p-8 rounded-[40px] border border-slate-100 mb-8 flex flex-col items-center">
+                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">桌号 {settlingOrder.tableNumber} - 应收总计</p>
+                 <p className="text-5xl font-black text-indigo-600 font-mono tracking-tighter">RM {settlingOrder.total.toFixed(2)}</p>
+              </div>
+              <div className="flex flex-col gap-4">
+                 <button onClick={() => handleFinalSettlement('CASH')} className="py-5 bg-indigo-600 text-white rounded-[24px] font-black text-xs uppercase tracking-widest hover:bg-slate-900 transition-all shadow-xl shadow-indigo-100">现金收款 / CASH</button>
+                 <button onClick={() => handleFinalSettlement('Card')} className="py-5 bg-slate-100 text-slate-800 rounded-[24px] font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all">数字钱包 / DIGITAL</button>
+              </div>
+              <button onClick={() => setSettlingOrder(null)} className="mt-8 text-slate-300 font-black text-[10px] uppercase tracking-widest hover:text-red-500 transition-colors">取消结账，返回列表</button>
+           </div>
         </div>
       )}
     </div>
