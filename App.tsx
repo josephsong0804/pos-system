@@ -4,7 +4,6 @@ import { UserRole, Merchant, Product, Order } from './types';
 import { INITIAL_MERCHANTS, INITIAL_PRODUCTS } from './constants';
 import PlatformAdminView from './components/PlatformAdminView';
 import MerchantPortal from './components/MerchantPortal';
-import CustomerView from './components/CustomerView';
 
 const App: React.FC = () => {
   const [role, setRole] = useState<UserRole | null>(null);
@@ -68,26 +67,27 @@ const App: React.FC = () => {
         <div className="w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-10 animate-in zoom-in duration-300">
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-indigo-600 rounded-3xl mx-auto flex items-center justify-center text-white text-3xl font-black mb-4 shadow-xl shadow-indigo-200">N</div>
-            <h1 className="text-2xl font-black text-slate-900">NovaPOS Malaysia</h1>
-            <p className="text-slate-400 text-sm mt-1">输入 12 位识别码</p>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">NovaPOS Malaysia</h1>
+            <p className="text-slate-400 text-sm mt-1">云端多端商户管理系统</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-6">
-            <input 
-              type="text"
-              value={loginCode}
-              onChange={e => setLoginCode(e.target.value.replace(/[^0-9]/g, '').replace(/(\d{4})(?=\d)/g, '$1 '))}
-              placeholder="0000 0000 0000"
-              maxLength={14}
-              className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 text-center text-xl font-mono font-bold tracking-[0.2em] focus:ring-4 focus:ring-indigo-50 outline-none"
-            />
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Access Code / 识别码</label>
+              <input 
+                type="text"
+                value={loginCode}
+                onChange={e => setLoginCode(e.target.value.replace(/[^0-9]/g, '').replace(/(\d{4})(?=\d)/g, '$1 '))}
+                placeholder="0000 0000 0000"
+                maxLength={14}
+                className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 text-center text-xl font-mono font-bold tracking-[0.2em] focus:ring-4 focus:ring-indigo-50 outline-none transition-all"
+              />
+            </div>
             {loginError && <p className="text-red-500 text-[10px] font-bold text-center uppercase">{loginError}</p>}
-            <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl shadow-slate-200 hover:bg-indigo-600 transition-all">
-              登入系统
+            <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl shadow-slate-200 hover:bg-indigo-600 transition-all active:scale-95">
+              验证并进入
             </button>
           </form>
-          <div className="mt-8 pt-8 border-t border-slate-50 text-center">
-             <button onClick={() => { setRole('CUSTOMER'); setCurrentMerchantId('m1'); }} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-indigo-600">点单端 Demo</button>
-          </div>
+          <p className="mt-8 text-center text-[10px] text-slate-300 uppercase tracking-widest font-bold">Powered by Nova Network</p>
         </div>
       </div>
     );
@@ -95,13 +95,13 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      {/* 返回按钮移到左侧 */}
+      {/* 返回按钮移到左上角 */}
       <button 
         onClick={handleBack}
-        className="fixed top-4 left-4 z-50 bg-white border border-slate-200 pl-3 pr-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 shadow-md flex items-center gap-2 transition-all active:scale-95 group"
+        className="fixed top-4 left-4 z-[100] bg-white/90 backdrop-blur-md border border-slate-200 pl-3 pr-4 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-white shadow-lg flex items-center gap-2 transition-all active:scale-95 group"
       >
-        <svg className="w-4 h-4 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
-        {role === 'SUPER_ADMIN' && currentMerchantId ? '返回列表' : '退出'}
+        <svg className="w-4 h-4 group-hover:-translate-x-1 transition-transform text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
+        {role === 'SUPER_ADMIN' && currentMerchantId ? '返回商户列表' : '退出登录'}
       </button>
 
       {role === 'SUPER_ADMIN' && !currentMerchantId && (
@@ -125,23 +125,15 @@ const App: React.FC = () => {
             setOrders(prev => prev.map(old => old.id === o.id ? o : old));
             syncChannel.postMessage({ type: 'UPDATE_ORDER', payload: o });
           }}
-          onUpdateProducts={(newMerchantProducts) => {
-            // 保留其他商家的商品，更新当前商家的商品
-            const otherProducts = products.filter(p => p.merchantId !== currentMerchantId);
-            const updatedAllProducts = [...otherProducts, ...newMerchantProducts];
-            setProducts(updatedAllProducts);
-            syncChannel.postMessage({ type: 'UPDATE_PRODUCTS', payload: updatedAllProducts });
+          onUpdateProducts={(newP) => {
+            const others = products.filter(p => p.merchantId !== currentMerchantId);
+            const total = [...others, ...newP];
+            setProducts(total);
+            syncChannel.postMessage({ type: 'UPDATE_PRODUCTS', payload: total });
           }}
-        />
-      )}
-
-      {role === 'CUSTOMER' && currentMerchant && (
-        <CustomerView 
-          merchant={currentMerchant}
-          products={products.filter(p => p.merchantId === currentMerchantId && p.isAvailable)}
-          onPlaceOrder={(o) => {
-            setOrders(prev => [...prev, o]);
-            syncChannel.postMessage({ type: 'NEW_ORDER', payload: o });
+          onNewOrder={(o) => {
+             setOrders(prev => [...prev, o]);
+             syncChannel.postMessage({ type: 'NEW_ORDER', payload: o });
           }}
         />
       )}

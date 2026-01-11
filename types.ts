@@ -29,6 +29,7 @@ export type OrderStatus = 'PENDING' | 'PAID' | 'PREPARING' | 'READY' | 'COMPLETE
 
 export interface OrderItem extends Product {
   quantity: number;
+  isServed?: boolean; // 新增：是否已划掉（上菜）
 }
 
 export interface Order {

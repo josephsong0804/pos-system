@@ -48,3 +48,29 @@ export const getSalesInsights = async (sales: Sale[], products: Product[]): Prom
     };
   }
 };
+
+/**
+ * 使用 Gemini 模型根据商品描述生成高品质美食图片
+ */
+export const generateProductImage = async (productName: string): Promise<string | null> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [{ 
+          text: `Professional, commercial high-quality food photography of ${productName}. The lighting is warm and inviting, appetizing, centered, high resolution, soft background.` 
+        }],
+      },
+    });
+
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("AI Image Generation Error:", error);
+    return null;
+  }
+};
