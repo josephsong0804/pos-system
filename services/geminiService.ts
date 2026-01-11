@@ -1,19 +1,12 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { Product, Sale, AIInsight } from "../types";
 
-const getAIClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    console.warn("API_KEY is missing. AI features will be disabled.");
-    return null;
-  }
-  return new GoogleGenAI({ apiKey });
-};
-
+/**
+ * Service to generate business insights using Google Gemini AI.
+ */
 export const getSalesInsights = async (sales: Sale[], products: Product[]): Promise<AIInsight> => {
-  const ai = getAIClient();
-  if (!ai) throw new Error("AI client not initialized");
+  // Always initialize a fresh client with process.env.API_KEY before use.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const model = 'gemini-3-flash-preview';
   const prompt = `
@@ -47,7 +40,9 @@ export const getSalesInsights = async (sales: Sale[], products: Product[]): Prom
       }
     });
 
-    return JSON.parse(response.text);
+    // Access text property directly from the result
+    const textResult = response.text || "{}";
+    return JSON.parse(textResult);
   } catch (error) {
     console.error("AI Insights Error:", error);
     return {
